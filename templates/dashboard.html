@@ -96,6 +96,55 @@
         border: none;
         border-radius: 12px;
         overflow: hidden;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+    }
+    .card-body {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        padding: 1.25rem;
+    }
+    .card-actions {
+        margin-top: auto;
+        padding-top: 1rem;
+        border-top: 1px solid rgba(0,0,0,0.1);
+    }
+    .action-buttons {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        max-height: 120px;
+        overflow-y: auto;
+        padding-right: 0.5rem;
+    }
+    .action-buttons::-webkit-scrollbar {
+        width: 6px;
+    }
+    .action-buttons::-webkit-scrollbar-track {
+        background: #f1f1f1;
+        border-radius: 3px;
+    }
+    .action-buttons::-webkit-scrollbar-thumb {
+        background: #888;
+        border-radius: 3px;
+    }
+    .action-buttons::-webkit-scrollbar-thumb:hover {
+        background: #555;
+    }
+    .action-button {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem 1rem;
+        border-radius: 8px;
+        font-size: 0.875rem;
+        transition: all 0.2s ease;
+        white-space: nowrap;
+    }
+    .action-button:hover {
+        transform: translateY(-1px);
     }
     .badge {
         padding: 0.5em 0.8em;
@@ -114,32 +163,10 @@
     .dropdown-item i {
         width: 1.2em;
     }
-
-    .action-buttons {
-        display: flex;
-        gap: 0.5rem;
-        flex-wrap: wrap;
-    }
-
-    .action-button {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.5rem 1rem;
-        border-radius: 8px;
-        font-size: 0.875rem;
-        transition: all 0.2s ease;
-    }
-
-    .action-button:hover {
-        transform: translateY(-1px);
-    }
-
     .share-link-input {
         font-family: monospace;
         font-size: 0.875rem;
     }
-
     .copy-success {
         position: fixed;
         bottom: 20px;
@@ -153,37 +180,31 @@
         animation: slideIn 0.3s ease;
         z-index: 1060;
     }
-
     @keyframes slideIn {
         from { transform: translateX(100%); opacity: 0; }
         to { transform: translateX(0); opacity: 1; }
     }
-
     .response-stats {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
         gap: 1rem;
         margin-bottom: 1rem;
     }
-
     .stat-card {
         background: #f8f9fa;
         padding: 1rem;
         border-radius: 8px;
         text-align: center;
     }
-
     .stat-value {
         font-size: 1.5rem;
         font-weight: 600;
         color: #1a73e8;
     }
-
     .stat-label {
         font-size: 0.875rem;
         color: #6c757d;
     }
-
     /* Fix for modal glitching */
     .modal {
         z-index: 1050; 
@@ -221,6 +242,163 @@
         -ms-user-select: none;
         user-select: none;
     }
+
+    .chat-widget {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        z-index: 1000;
+    }
+
+    .chat-toggle {
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        background: #4e73df;
+        border: none;
+        color: white;
+        font-size: 24px;
+        cursor: pointer;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        position: relative;
+        transition: all 0.3s ease;
+    }
+
+    .chat-toggle:hover {
+        transform: scale(1.1);
+        background: #2e59d9;
+    }
+
+    .notification-badge {
+        position: absolute;
+        top: -5px;
+        right: -5px;
+        background: #e74a3b;
+        color: white;
+        border-radius: 50%;
+        width: 20px;
+        height: 20px;
+        font-size: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .chat-container {
+        position: fixed;
+        bottom: 90px;
+        right: 20px;
+        width: 350px;
+        height: 500px;
+        background: white;
+        border-radius: 15px;
+        box-shadow: 0 5px 20px rgba(0,0,0,0.15);
+        display: none;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .chat-header {
+        background: #4e73df;
+        color: white;
+        padding: 15px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .chat-messages {
+        flex: 1;
+        padding: 15px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .message {
+        max-width: 80%;
+        padding: 10px 15px;
+        border-radius: 15px;
+        margin-bottom: 5px;
+    }
+
+    .message.user {
+        align-self: flex-end;
+        background: #4e73df;
+        color: white;
+        border-bottom-right-radius: 5px;
+    }
+
+    .message.bot {
+        align-self: flex-start;
+        background: #f8f9fc;
+        color: #5a5c69;
+        border-bottom-left-radius: 5px;
+    }
+
+    .chat-input {
+        padding: 15px;
+        border-top: 1px solid #e3e6f0;
+    }
+
+    .chat-input form {
+        display: flex;
+        gap: 10px;
+    }
+
+    .chat-input input {
+        flex: 1;
+        padding: 10px;
+        border: 1px solid #e3e6f0;
+        border-radius: 20px;
+        outline: none;
+    }
+
+    .chat-input input:focus {
+        border-color: #4e73df;
+    }
+
+    .chat-input button {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: #4e73df;
+        border: none;
+        color: white;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+    .chat-input button:hover {
+        background: #2e59d9;
+    }
+
+    .typing-indicator {
+        display: flex;
+        gap: 5px;
+        padding: 10px 15px;
+        background: #f8f9fc;
+        border-radius: 15px;
+        width: fit-content;
+        margin-bottom: 5px;
+    }
+
+    .typing-indicator span {
+        width: 8px;
+        height: 8px;
+        background: #4e73df;
+        border-radius: 50%;
+        animation: typing 1s infinite;
+    }
+
+    .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+    .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes typing {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-5px); }
+    }
 </style>
 {% endblock %}
 
@@ -228,9 +406,17 @@
 <div class="container py-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1 class="h2 mb-0">My Forms</h1>
-        <a href="{{ url_for('create_form') }}" class="btn btn-primary">
-            <i class="fas fa-plus me-2"></i>Create New Form
-        </a>
+        <div class="d-flex gap-2">
+            <a href="{{ url_for('template_gallery') }}" class="btn btn-outline-primary">
+                <i class="fas fa-th-large me-2"></i>Templates
+            </a>
+            <a href="{{ url_for('create_form_ai') }}" class="btn btn-outline-primary">
+                <i class="fas fa-robot me-2"></i>AI Form Creator
+            </a>
+            <a href="{{ url_for('create_form') }}" class="btn btn-primary">
+                <i class="fas fa-plus me-2"></i>Create New Form
+            </a>
+        </div>
     </div>
     
     <div class="nav-item">
@@ -289,21 +475,21 @@
                 </div>
                 
                     <div class="card-actions">
-                        <div class="d-flex gap-2">
-                            <a href="{{ url_for('view_form', form_id=form.id) }}" class="btn btn-sm btn-outline-primary" title="View Form">
+                        <div class="action-buttons">
+                            <a href="{{ url_for('view_form', form_id=form.id) }}" class="btn btn-sm btn-outline-primary action-button" title="View Form">
                                 <i class="fas fa-eye me-1"></i>View
                             </a>
-                            <a href="{{ url_for('edit_form', form_id=form.id) }}" class="btn btn-sm btn-outline-secondary" title="Edit Form">
+                            <a href="{{ url_for('edit_form', form_id=form.id) }}" class="btn btn-sm btn-outline-secondary action-button" title="Edit Form">
                                 <i class="fas fa-edit me-1"></i>Edit
                             </a>
-                            <a href="{{ url_for('view_responses', form_id=form.id) }}" class="btn btn-sm btn-outline-info" title="View Responses">
+                            <a href="{{ url_for('view_responses', form_id=form.id) }}" class="btn btn-sm btn-outline-info action-button" title="View Responses">
                                 <i class="fas fa-chart-bar me-1"></i>Responses
                             </a>
-                            <button type="button" class="btn btn-sm btn-outline-success" title="Share Form" 
+                            <button type="button" class="btn btn-sm btn-outline-success action-button" title="Share Form" 
                                     data-bs-toggle="modal" data-bs-target="#shareModal{{ form.id }}">
                                 <i class="fas fa-share-alt me-1"></i>Share
                             </button>
-                            <button type="button" class="btn btn-sm btn-outline-danger" title="Delete Form" 
+                            <button type="button" class="btn btn-sm btn-outline-danger action-button" title="Delete Form" 
                                     data-bs-toggle="modal" data-bs-target="#deleteModal{{ form.id }}">
                                 <i class="fas fa-trash me-1"></i>Delete
                             </button>
@@ -547,8 +733,40 @@
     <span>Copied to clipboard!</span>
 </div>
 
+<!-- Add this after the main content div -->
+<div class="chat-widget" id="chatWidget">
+    <button class="chat-toggle" onclick="toggleChat()">
+        <i class="fas fa-comments"></i>
+        <span class="notification-badge" id="chatNotification" style="display: none;">1</span>
+    </button>
+    
+    <div class="chat-container" id="chatContainer">
+        <div class="chat-header">
+            <h5 class="mb-0"><i class="fas fa-robot me-2"></i>AI Assistant</h5>
+            <button class="btn-close" onclick="toggleChat()"></button>
+        </div>
+        <div class="chat-messages" id="chatMessages">
+            <div class="message bot">
+                <div class="message-content">
+                    Hello! I'm your AI assistant. How can I help you today?
+                </div>
+            </div>
+        </div>
+        <div class="chat-input">
+            <form id="chatForm" onsubmit="sendMessage(event)">
+                <input type="text" id="messageInput" placeholder="Type your message..." required>
+                <button type="submit">
+                    <i class="fas fa-paper-plane"></i>
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script>
 let currentFormId = null;
+let chatOpen = false;
+let unreadMessages = 0;
 
 // Fix for modal showing/hiding
 document.addEventListener('DOMContentLoaded', function() {
@@ -801,5 +1019,96 @@ function updateEmbedCode(formId) {
         embedCodeElement.value = embedCode;
     }
 }
+
+function toggleChat() {
+    const container = document.getElementById('chatContainer');
+    const notification = document.getElementById('chatNotification');
+    
+    chatOpen = !chatOpen;
+    container.style.display = chatOpen ? 'flex' : 'none';
+    
+    if (chatOpen) {
+        unreadMessages = 0;
+        notification.style.display = 'none';
+    }
+}
+
+function addMessage(content, isUser = false) {
+    const messages = document.getElementById('chatMessages');
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${isUser ? 'user' : 'bot'}`;
+    messageDiv.innerHTML = `<div class="message-content">${content}</div>`;
+    messages.appendChild(messageDiv);
+    messages.scrollTop = messages.scrollHeight;
+}
+
+function showTypingIndicator() {
+    const messages = document.getElementById('chatMessages');
+    const indicator = document.createElement('div');
+    indicator.className = 'typing-indicator';
+    indicator.innerHTML = '<span></span><span></span><span></span>';
+    indicator.id = 'typingIndicator';
+    messages.appendChild(indicator);
+    messages.scrollTop = messages.scrollHeight;
+}
+
+function removeTypingIndicator() {
+    const indicator = document.getElementById('typingIndicator');
+    if (indicator) {
+        indicator.remove();
+    }
+}
+
+async function sendMessage(event) {
+    event.preventDefault();
+    const input = document.getElementById('messageInput');
+    const message = input.value.trim();
+    
+    if (!message) return;
+    
+    // Add user message
+    addMessage(message, true);
+    input.value = '';
+    
+    // Show typing indicator
+    showTypingIndicator();
+    
+    try {
+        const response = await fetch('/chat', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ message })
+        });
+        
+        const data = await response.json();
+        removeTypingIndicator();
+        
+        if (data.success) {
+            addMessage(data.response);
+        } else {
+            addMessage('Sorry, I encountered an error. Please try again.');
+        }
+    } catch (error) {
+        removeTypingIndicator();
+        addMessage('Sorry, I encountered an error. Please try again.');
+    }
+}
+
+// Check for new messages when chat is closed
+function checkNewMessages() {
+    if (!chatOpen && unreadMessages > 0) {
+        const notification = document.getElementById('chatNotification');
+        notification.style.display = 'flex';
+        notification.textContent = unreadMessages;
+    }
+}
+
+// Initialize chat
+document.addEventListener('DOMContentLoaded', function() {
+    const chatContainer = document.getElementById('chatContainer');
+    chatContainer.style.display = 'none';
+});
 </script>
 {% endblock %} 

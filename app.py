@@ -20,6 +20,15 @@ import google.generativeai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 from dotenv import load_dotenv
 from functools import wraps
+import json
+import networkx as nx
+from networkx.readwrite import json_graph
+import matplotlib.pyplot as plt
+import io
+import base64
+from PIL import Image
+import google.generativeai as genai
+from datetime import datetime
 
 # Load environment variables from .env file
 load_dotenv()
@@ -310,6 +319,19 @@ class FormTemplate(db.Model):
             self.template_data = json.dumps(data)
         else:
             self.template_data = data
+
+class Geolocation(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    response_id = db.Column(db.Integer, db.ForeignKey('response.id'), nullable=False)
+    latitude = db.Column(db.Float, nullable=True)
+    longitude = db.Column(db.Float, nullable=True)
+    city = db.Column(db.String(100), nullable=True)
+    region = db.Column(db.String(100), nullable=True)
+    country = db.Column(db.String(100), nullable=True)
+    ip_address = db.Column(db.String(50), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    response = db.relationship('Response', backref='geolocation')
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -706,18 +728,17 @@ def export_response_to_json(response, form):
     return response_data, file_path
 
 def verify_recaptcha(response_token):
-    """Verify the reCAPTCHA response token"""
-    return True
+    """Verify the reCAPTCHA response token with Google's API."""
     try:
         data = {
             'secret': app.config['RECAPTCHA_SECRET_KEY'],
             'response': response_token
         }
-        response = requests.post(app.config['RECAPTCHA_VERIFY_URL'], data=data)
+        response = requests.post('https://www.google.com/recaptcha/api/siteverify', data=data)
         result = response.json()
         return result.get('success', False)
     except Exception as e:
-        print(f"Error verifying reCAPTCHA: {str(e)}")
+        print(f"reCAPTCHA verification error: {str(e)}")
         return False
 
 # Add this decorator for rate limiting
@@ -755,26 +776,23 @@ def submit_form(form_id):
         
         # Check if form is closed
         if form.is_closed:
-            flash('This form is no longer accepting responses.', 'warning')
-            return redirect(url_for('view_form', form_id=form_id))
-        
+            return jsonify({
+                'status': 'error',
+                'message': 'This form is closed and no longer accepting responses.'
+            }), 400
+
         # Verify reCAPTCHA
-        # recaptcha_response = request.form.get('g-recaptcha-response')
-        # if not recaptcha_response or not verify_recaptcha(recaptcha_response):
-        #     flash('Please complete the reCAPTCHA verification.', 'warning')
-        #     return redirect(url_for('view_form', form_id=form_id))
-        
-        # Check for privacy policy and terms consent if required
-        # if form.requires_consent:
-        #     has_consent = request.form.get('has_consent') == 'true'
-        #     if not has_consent:
-        #         flash('You must agree to the privacy policy and terms to submit this form.', 'warning')
-        #         return redirect(url_for('view_form', form_id=form_id))
-        
+        recaptcha_response = request.form.get('g-recaptcha-response')
+        if not verify_recaptcha(recaptcha_response):
+            return jsonify({
+                'status': 'error',
+                'message': 'Please complete the reCAPTCHA verification.'
+            }), 400
+
         # Get UTM parameters and device type
         utm_params = extract_utm_parameters(request)
         device_type = detect_device_type(request.user_agent.string)
-        
+
         # Create new response
         response = Response(
             form_id=form_id,
@@ -785,137 +803,60 @@ def submit_form(form_id):
             utm_content=utm_params.get('utm_content'),
             utm_term=utm_params.get('utm_term'),
             device_type=device_type,
-            # has_consent=has_consent if form.requires_consent else True
-            has_consent=True
+            has_consent=True  # Since we're requiring reCAPTCHA, we can assume consent
         )
-        
-        # Add response to session and flush to get ID
-        db.session.add(response)
-        db.session.flush()
-        
-        # Process form data
-        form_data = request.form.to_dict()
-        total_score = 0
-        max_possible_score = 0
-        
+
+        # Get geolocation data
+        geolocation_data = request.form.get('geolocation')
+        if geolocation_data:
+            try:
+                geo_data = json.loads(geolocation_data)
+                geolocation = Geolocation(
+                    response=response,
+                    latitude=geo_data.get('latitude'),
+                    longitude=geo_data.get('longitude'),
+                    city=geo_data.get('city'),
+                    region=geo_data.get('region'),
+                    country=geo_data.get('country'),
+                    ip_address=request.remote_addr
+                )
+                db.session.add(geolocation)
+            except json.JSONDecodeError:
+                print("Error parsing geolocation data")
+
+        # Process form answers
         for question in form.questions:
-            answer_text = form_data.get(f'question_{question.id}')
-            
-            # Handle quiz scoring
-            if form.is_quiz and question.is_quiz_question:
-                max_possible_score += question.points
-                
+            answer_text = request.form.get(f'question_{question.id}')
             if answer_text:
-                # For multiple choice/checkbox questions
-                if question.question_type in ['multiple_choice', 'checkbox']:
-                    try:
-                        correct_answers = json.loads(question.correct_answer) if question.correct_answer else []
-                        user_answers = json.loads(answer_text)
-                        
-                        # Check if all correct answers are selected
-                        if set(user_answers) == set(correct_answers):
-                            total_score += question.points
-                    except (json.JSONDecodeError, TypeError):
-                        # If there's an error parsing JSON, skip scoring for this question
-                        pass
-                # For text questions
-                elif question.question_type == 'text':
-                    try:
-                        correct_answers = json.loads(question.correct_answer) if question.correct_answer else []
-                        if answer_text.lower() in [ans.lower() for ans in correct_answers]:
-                            total_score += question.points
-                    except (json.JSONDecodeError, TypeError):
-                        # If there's an error parsing JSON, skip scoring for this question
-                        pass
-            
-            # Create answer
-            answer = Answer(
-                response_id=response.id,  # Now response.id will be available
-                question_id=question.id,
-                answer_text=answer_text or ''
-            )
-            db.session.add(answer)
-            
-            # Handle subquestions
-            if question.question_type in ['multiple_choice', 'checkbox']:
-                try:
-                    options = json.loads(answer_text) if answer_text else []
-                    for option in options:
-                        subquestions = SubQuestion.query.filter_by(
-                            question_id=question.id,
-                            parent_option=option
-                        ).all()
-                        
-                        for subquestion in subquestions:
-                            sub_answer_text = form_data.get(f'subquestion_{subquestion.id}')
-                            if sub_answer_text:
-                                sub_answer = SubQuestionAnswer(
-                                    response_id=response.id,  # Now response.id will be available
-                                    subquestion_id=subquestion.id,
-                                    selected_option=option,
-                                    answer_text=sub_answer_text
-                                )
-                                db.session.add(sub_answer)
-                except (json.JSONDecodeError, TypeError):
-                    # If there's an error parsing JSON, skip subquestions for this question
-                    pass
-        
-        # Calculate quiz results
-        if form.is_quiz:
-            score_percentage = (total_score / max_possible_score * 100) if max_possible_score > 0 else 0
-            response.score = total_score
-            response.max_score = max_possible_score
-            response.passed = score_percentage >= form.passing_score
-        
-        # Commit all changes
+                answer = Answer(
+                    response=response,
+                    question_id=question.id,
+                    answer_text=answer_text
+                )
+                db.session.add(answer)
+
+        db.session.add(response)
         db.session.commit()
-        
-        # Prepare response data
-        response_data = {
+
+        # Return success response
+        return jsonify({
             'status': 'success',
-            'message': 'Form submitted successfully',
-            'response_id': response.id
-        }
-        
-        if form.is_quiz:
-            response_data.update({
-                'score': total_score,
-                'max_score': max_possible_score,
-                'score_percentage': round(score_percentage, 1),
-                'passed': response.passed
-            })
-        
-        # Handle AJAX requests or embedded forms
-        is_embedded = request.headers.get('X-Embedded') == 'true' or request.headers.get('X-Requested-With') == 'XMLHttpRequest'
-        if is_embedded:
-            return jsonify(response_data)
-        
-        # Show appropriate success message
-        if form.is_quiz and form.show_score:
-            if response.passed:
-                flash(f'Congratulations! You passed the quiz with a score of {total_score}/{max_possible_score} ({response_data["score_percentage"]}%).', 'success')
-            else:
-                flash(f'You scored {total_score}/{max_possible_score} ({response_data["score_percentage"]}%). The passing score is {form.passing_score}%.', 'warning')
-        else:
-            flash('Thank you! Your response has been recorded.', 'success')
-            
-        # Return standard page redirect for non-AJAX requests
-        return redirect(url_for('form_submitted', form_id=form_id, response_id=response.id))
-        
+            'redirect_url': url_for('form_submitted', form_id=form_id, response_id=response.id)
+        })
+
     except Exception as e:
         db.session.rollback()
         print(f"Error submitting form: {str(e)}")
         
         # Handle AJAX requests or embedded forms
-        is_embedded = request.headers.get('X-Embedded') == 'true' or request.headers.get('X-Requested-With') == 'XMLHttpRequest'
-        if is_embedded:
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
             return jsonify({
                 'status': 'error',
-                'message': f'Error submitting form: {str(e)}'
-            }), 400
-        
-        flash(f'Error submitting form: {str(e)}', 'danger')
-        return redirect(url_for('view_form', form_id=form_id))
+                'message': 'There was an error submitting the form. Please try again.'
+            }), 500
+        else:
+            flash('There was an error submitting the form. Please try again.', 'error')
+            return redirect(url_for('view_form', form_id=form_id))
 
 # Add a success page route
 @app.route('/form/<int:form_id>/submitted')
@@ -940,7 +881,17 @@ def view_responses(form_id):
         return redirect(url_for('dashboard'))
     
     responses = Response.query.filter_by(form_id=form_id).all()
-    return render_template('view_responses.html', form=form, responses=responses)
+    
+    # Get geolocation data for each response
+    response_data = []
+    for response in responses:
+        geo = Geolocation.query.filter_by(response_id=response.id).first()
+        response_data.append({
+            'response': response,
+            'geolocation': geo
+        })
+    
+    return render_template('view_responses.html', form=form, response_data=response_data)
 
 @app.route('/form/<int:form_id>/responses/export-json')
 @login_required
@@ -3082,6 +3033,374 @@ def view_data():
     </html>
     """
     return render_template_string(html, entries=view_data_storage)
+
+# Configure Google's Generative AI
+def configure_genai():
+    try:
+        # Use GOOGLE_API_KEY instead of GEMINI_API_KEY
+        genai.configure(api_key=app.config['GOOGLE_API_KEY'])
+        # Use the previously used model
+        model = genai.GenerativeModel('gemini-2.0-flash')
+        return model
+    except Exception as e:
+        app.logger.error(f"Error configuring Google AI: {str(e)}")
+        return None
+
+def generate_mindmap(prompt):
+    """Generate a mind map structure from the prompt using Google AI."""
+    try:
+        model = configure_genai()
+        if not model:
+            app.logger.error("Failed to configure Google AI model")
+            return None
+
+        # Create a prompt for the AI to generate a mind map structure
+        mindmap_prompt = f"""
+        You are a form creation expert. Create a structured form based on this description: {prompt}
+        
+        Return ONLY a JSON object with the following structure, no other text:
+        {{
+            "title": "Form Title",
+            "description": "Form Description",
+            "sections": [
+                {{
+                    "title": "Section Title",
+                    "questions": [
+                        {{
+                            "text": "Question Text",
+                            "type": "text/multiple_choice/checkbox",
+                            "required": true/false,
+                            "options": ["option1", "option2"] // for multiple choice/checkbox
+                        }}
+                    ]
+                }}
+            ]
+        }}
+        
+        Guidelines:
+        1. Break down the form into logical sections
+        2. Use appropriate question types (text, multiple_choice, checkbox)
+        3. Add relevant options for multiple choice questions
+        4. Mark essential questions as required
+        5. Keep the JSON structure clean and valid
+        """
+
+        # Optimized generation config for gemini-2.0-flash
+        generation_config = {
+            "temperature": 0.3,  # Lower temperature for more focused output
+            "top_p": 0.95,
+            "top_k": 40,
+            "max_output_tokens": 1024,  # Reduced for faster response
+            "candidate_count": 1
+        }
+
+        safety_settings = [
+            {
+                "category": "HARM_CATEGORY_HARASSMENT",
+                "threshold": "BLOCK_MEDIUM_AND_ABOVE"
+            },
+            {
+                "category": "HARM_CATEGORY_HATE_SPEECH",
+                "threshold": "BLOCK_MEDIUM_AND_ABOVE"
+            },
+            {
+                "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                "threshold": "BLOCK_MEDIUM_AND_ABOVE"
+            },
+            {
+                "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                "threshold": "BLOCK_MEDIUM_AND_ABOVE"
+            }
+        ]
+
+        # Generate content with optimized settings
+        response = model.generate_content(
+            mindmap_prompt,
+            generation_config=generation_config,
+            safety_settings=safety_settings,
+            stream=False  # Disable streaming for faster response
+        )
+
+        # Extract the JSON from the response
+        try:
+            # Clean the response text to ensure it's valid JSON
+            response_text = response.text.strip()
+            # Remove any markdown code block indicators and extra whitespace
+            response_text = response_text.replace('```json', '').replace('```', '').strip()
+            # Remove any leading/trailing quotes if present
+            response_text = response_text.strip('"\'')
+            
+            mindmap_data = json.loads(response_text)
+            
+            # Validate the structure
+            required_keys = ['title', 'description', 'sections']
+            if not all(key in mindmap_data for key in required_keys):
+                app.logger.error("Invalid mind map structure: missing required keys")
+                return None
+                
+            if not isinstance(mindmap_data['sections'], list):
+                app.logger.error("Invalid mind map structure: sections must be a list")
+                return None
+                
+            return mindmap_data
+            
+        except json.JSONDecodeError as e:
+            app.logger.error(f"Failed to parse AI response as JSON: {str(e)}")
+            app.logger.error(f"Raw response: {response.text}")
+            return None
+            
+    except Exception as e:
+        app.logger.error(f"Error generating mind map: {str(e)}")
+        return None
+
+def create_mindmap_visualization(mindmap_data):
+    """Create a visual representation of the mind map."""
+    try:
+        G = nx.DiGraph()
+        
+        # Add root node
+        G.add_node("root", label=mindmap_data["title"])
+        
+        # Add sections and questions
+        for section in mindmap_data["sections"]:
+            section_id = f"section_{section['title']}"
+            G.add_node(section_id, label=section["title"])
+            G.add_edge("root", section_id)
+            
+            for question in section["questions"]:
+                question_id = f"q_{question['text'][:20]}"
+                G.add_node(question_id, label=question["text"])
+                G.add_edge(section_id, question_id)
+        
+        # Create the visualization
+        plt.figure(figsize=(12, 8))
+        pos = nx.spring_layout(G, k=1, iterations=50)
+        
+        # Draw nodes
+        nx.draw_networkx_nodes(G, pos, node_color='lightblue', 
+                             node_size=2000, alpha=0.7)
+        
+        # Draw edges
+        nx.draw_networkx_edges(G, pos, edge_color='gray', 
+                             arrows=True, arrowsize=20)
+        
+        # Draw labels
+        labels = nx.get_node_attributes(G, 'label')
+        nx.draw_networkx_labels(G, pos, labels, font_size=8)
+        
+        # Save to buffer
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', bbox_inches='tight', dpi=300)
+        buf.seek(0)
+        
+        # Convert to base64
+        img_str = base64.b64encode(buf.read()).decode()
+        plt.close()
+        
+        return f'<img src="data:image/png;base64,{img_str}" class="img-fluid" alt="Mind Map">'
+    except Exception as e:
+        app.logger.error(f"Error creating mind map visualization: {str(e)}")
+        return None
+
+def generate_form_from_mindmap(mindmap_data):
+    """Generate a form preview from the mind map data."""
+    try:
+        html = f"""
+        <div class="form-preview-content">
+            <h3 class="mb-4">{mindmap_data['title']}</h3>
+            <p class="text-muted mb-4">{mindmap_data['description']}</p>
+        """
+        
+        for section in mindmap_data["sections"]:
+            html += f"""
+            <div class="form-section mb-4">
+                <h4 class="mb-3">{section['title']}</h4>
+            """
+            
+            for question in section["questions"]:
+                html += f"""
+                <div class="form-group mb-3">
+                    <label class="form-label">
+                        {question['text']}
+                        {f'<span class="text-danger">*</span>' if question.get('required', False) else ''}
+                    </label>
+                """
+                
+                if question["type"] == "text":
+                    html += f"""
+                    <input type="text" class="form-control" 
+                           placeholder="Enter your answer" 
+                           {'required' if question.get('required', False) else ''}>
+                    """
+                elif question["type"] in ["multiple_choice", "checkbox"]:
+                    for option in question.get("options", []):
+                        input_type = "radio" if question["type"] == "multiple_choice" else "checkbox"
+                        html += f"""
+                        <div class="form-check">
+                            <input class="form-check-input" type="{input_type}" 
+                                   name="q_{question['text'][:20]}" 
+                                   id="q_{question['text'][:20]}_{option[:20]}"
+                                   {'required' if question.get('required', False) else ''}>
+                            <label class="form-check-label" for="q_{question['text'][:20]}_{option[:20]}">
+                                {option}
+                            </label>
+                        </div>
+                        """
+                
+                html += "</div>"
+            
+            html += "</div>"
+        
+        html += "</div>"
+        return html
+    except Exception as e:
+        app.logger.error(f"Error generating form preview: {str(e)}")
+        return None
+
+@app.route('/create-form-ai', methods=['GET', 'POST'])
+@login_required
+def create_form_ai():
+    """Handle AI form creation."""
+    if request.method == 'POST':
+        prompt = request.form.get('prompt')
+        include_mindmap = request.form.get('include_mindmap', 'true') == 'true'
+
+        if not prompt:
+            flash('Please provide a description for the form.', 'error')
+            return redirect(url_for('create_form_ai'))
+
+        # Generate mind map structure
+        mindmap_data = generate_mindmap(prompt)
+        if not mindmap_data:
+            flash('Failed to generate form structure. Please try again.', 'error')
+            return redirect(url_for('create_form_ai'))
+
+        # Store the mind map data in session for form creation
+        session['mindmap_data'] = mindmap_data
+
+        # Generate visualization if requested
+        mindmap_image = None
+        if include_mindmap:
+            mindmap_image = create_mindmap_visualization(mindmap_data)
+
+        # Generate form preview
+        form_preview = generate_form_from_mindmap(mindmap_data)
+
+        return render_template('create_form_ai.html',
+                             mindmap_data=mindmap_data,
+                             mindmap_image=mindmap_image,
+                             form_preview=form_preview)
+
+    return render_template('create_form_ai.html')
+
+@app.route('/create-form-from-ai', methods=['POST'])
+@login_required
+def create_form_from_ai():
+    """Create a form from the AI-generated mind map data."""
+    try:
+        # Get the mind map data from the session
+        mindmap_data = session.get('mindmap_data')
+        if not mindmap_data:
+            flash('No form data found. Please generate a form first.', 'error')
+            return redirect(url_for('create_form_ai'))
+
+        # Create a new form
+        form = Form(
+            title=mindmap_data['title'],
+            description=mindmap_data['description'],
+            user_id=current_user.id,
+            created_at=datetime.utcnow()
+        )
+        db.session.add(form)
+        db.session.flush()  # Get the form ID
+
+        # Add questions from each section
+        order = 1
+        for section in mindmap_data['sections']:
+            for question_data in section['questions']:
+                question = Question(
+                    form_id=form.id,
+                    question_text=question_data['text'],
+                    question_type=question_data['type'],
+                    required=question_data.get('required', False),
+                    order=order
+                )
+                
+                # Handle options for multiple choice and checkbox questions
+                if question_data['type'] in ['multiple_choice', 'checkbox'] and 'options' in question_data:
+                    question.set_options(question_data['options'])
+                
+                db.session.add(question)
+                order += 1
+
+        # Commit all changes
+        db.session.commit()
+
+        # Clear the mind map data from session
+        session.pop('mindmap_data', None)
+
+        flash('Form created successfully!', 'success')
+        return redirect(url_for('dashboard'))
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error creating form from AI: {str(e)}")
+        flash('An error occurred while creating the form. Please try again.', 'error')
+        return redirect(url_for('create_form_ai'))
+
+@app.route('/chat', methods=['POST'])
+@login_required
+def chat():
+    """Handle chat messages using Gemini AI."""
+    try:
+        data = request.get_json()
+        message = data.get('message')
+        
+        if not message:
+            return jsonify({'success': False, 'error': 'No message provided'})
+        
+        # Configure Gemini
+        model = configure_genai()
+        if not model:
+            return jsonify({'success': False, 'error': 'Failed to configure AI model'})
+        
+        # Create a prompt for the AI
+        prompt = f"""
+        You are a helpful AI assistant for a form creation platform. The user is asking: {message}
+        
+        Guidelines:
+        1. Be concise and clear in your responses
+        2. Focus on helping with form creation, management, and troubleshooting
+        3. If the question is not related to forms, politely redirect to form-related topics
+        4. Use markdown formatting for better readability
+        5. If you're not sure about something, admit it and suggest contacting support
+        
+        Provide a helpful response:
+        """
+        
+        # Generate response
+        response = model.generate_content(
+            prompt,
+            generation_config={
+                "temperature": 0.7,
+                "top_p": 0.8,
+                "top_k": 40,
+                "max_output_tokens": 1024,
+            }
+        )
+        
+        return jsonify({
+            'success': True,
+            'response': response.text
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Error in chat: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': 'An error occurred while processing your message'
+        })
+
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()

@@ -181,4 +181,122 @@ function exportToCSV() {
     link.click();
 }
 </script>
+
+<div class="responses-container">
+    <h2>Responses for {{ form.title }}</h2>
+    
+    {% for data in response_data %}
+    <div class="response-card">
+        <div class="response-header">
+            <h3>Response #{{ data.response.id }}</h3>
+            <p class="timestamp">Submitted: {{ data.response.submitted_at.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+        </div>
+        
+        {% if data.geolocation %}
+        <div class="geolocation-info">
+            <h4>Location Information</h4>
+            <p>
+                {% if data.geolocation.city or data.geolocation.region or data.geolocation.country %}
+                    <strong>Location:</strong> 
+                    {% if data.geolocation.city %}{{ data.geolocation.city }}{% endif %}
+                    {% if data.geolocation.region %}, {{ data.geolocation.region }}{% endif %}
+                    {% if data.geolocation.country %}, {{ data.geolocation.country }}{% endif %}
+                {% endif %}
+            </p>
+            {% if data.geolocation.latitude and data.geolocation.longitude %}
+            <p>
+                <strong>Coordinates:</strong> 
+                {{ data.geolocation.latitude }}, {{ data.geolocation.longitude }}
+                <a href="https://www.google.com/maps?q={{ data.geolocation.latitude }},{{ data.geolocation.longitude }}" 
+                   target="_blank" rel="noopener" class="map-link">View on Map</a>
+            </p>
+            {% endif %}
+        </div>
+        {% endif %}
+        
+        <div class="answers">
+            {% for answer in data.response.answers %}
+            <div class="answer-item">
+                <h4>{{ answer.question.question_text }}</h4>
+                <p>{{ answer.answer_text }}</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<style>
+.responses-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.response-card {
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    margin-bottom: 20px;
+    padding: 20px;
+}
+
+.response-header {
+    border-bottom: 1px solid #eee;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+}
+
+.response-header h3 {
+    margin: 0;
+    color: #333;
+}
+
+.timestamp {
+    color: #666;
+    font-size: 0.9em;
+    margin: 5px 0 0;
+}
+
+.geolocation-info {
+    background: #f8f9fa;
+    border-radius: 6px;
+    padding: 15px;
+    margin-bottom: 15px;
+}
+
+.geolocation-info h4 {
+    margin: 0 0 10px;
+    color: #444;
+}
+
+.map-link {
+    display: inline-block;
+    margin-left: 10px;
+    color: #007bff;
+    text-decoration: none;
+}
+
+.map-link:hover {
+    text-decoration: underline;
+}
+
+.answers {
+    margin-top: 15px;
+}
+
+.answer-item {
+    margin-bottom: 15px;
+}
+
+.answer-item h4 {
+    margin: 0 0 5px;
+    color: #444;
+}
+
+.answer-item p {
+    margin: 0;
+    color: #666;
+}
+</style>
 {% endblock %} 
